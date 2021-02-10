@@ -42,13 +42,13 @@ def bfs(maze):
 
     while agent.position != goal:
         explored.append(agent.position)
-        #print(agent.position, "added to explored list")
+        # print(agent.position, "added to explored list")
         i = agent.position[0]
         j = agent.position[1]
 
         for cell in maze.neighbors(i, j):
             if cell not in explored and cell not in frontier:
-                #print(cell, cell in explored)
+                # print(cell, cell in explored)
                 frontier.append(cell)
                 tree.append(node(cell, agent))
 
@@ -101,7 +101,7 @@ def astar_single(maze):
 
     while agent.position != goal:
         explored.append(agent.position)
-        #print(agent.position, "added to explored list")
+        # print(agent.position, "added to explored list")
         i = agent.position[0]
         j = agent.position[1]
 
@@ -114,7 +114,7 @@ def astar_single(maze):
                         replace = frontier.pop(idx)[1]
                         frontier.append((check, replace))
                 else:
-                    #print(cell, cell in explored)
+                    # print(cell, cell in explored)
                     frontier.append((check,
                                      node(cell, agent, agent.dist + 1)))
         frontier.sort(key=sorter)
@@ -155,13 +155,16 @@ def astar_multiple(maze):
 
     class node:
 
-        def __init__(self, position, parent, distance, goals, mstDist, explored):
+        def __init__(self, position, parent, distance, mstDist, k, explored, goalCount, goals):
             self.position = position
             self.parent = parent
             self.distance = distance
             self.goals = goals
             self.mstDist = mstDist
+            self.k = k
             self.explored = explored
+            self.goalCount = goalCount
+            self.goals = goals
 
         """
         def __init__(self, copyNode):
@@ -177,6 +180,8 @@ def astar_multiple(maze):
         return abs(loc1[0]-loc2[0]) + abs(loc1[1]-loc2[1])
 
     def mstLen(mst):
+        if len(mst) == 0:
+            return 0
         mst_len = 0
         for edge in mst:
             mst_len += edge.cost
@@ -202,12 +207,48 @@ def astar_multiple(maze):
             i += 1
         return -1
 
+    def g(node):
+        return node.distance + node.mstDist
+
+    def findSet(sets, node):
+        i = 0
+        for dSet in sets:
+            if node in dSet:
+                return i
+            i += 1
+        return -1
+
+    def getGoals(goals, k):
+        needs = []
+        i = 0
+        for g in k:
+            if g == 0:
+                needs.append(goals[i])
+            i += 1
+        return needs
+
+    def hashPoint(i, j, k):
+        out = ""
+        out += str(i)
+        out += str(j)
+        for num in k:
+            out += str(num)
+        return out
+
+    def hasAllGoals(goals):
+        for i in goals:
+            if i != 1:
+                return False
+        return True
+
     def findMST(goals):
         class edge:
             def __init__(self, nodes, cost):
                 self.nodes = nodes
                 self.cost = cost
         # create a tree of all edges based on their manhattan distances
+        if len(goals) <= 1:
+            return []
         edges = []
         for i in range(len(goals)):
             j = i + 1
@@ -223,16 +264,45 @@ def astar_multiple(maze):
         # add all the edges to a minimum spanning tree
         mst = []
         nodes = []
+        sets = []
         i = 0
-        while len(nodes) < len(goals) and i < len(edges):
+        while len(nodes) < len(goals) or len(sets) > 1:
+
             edge = edges[i]
-            if not (edge.nodes[0] in nodes and edge.nodes[1] in nodes):
+            # print(edge.nodes)
+            # neither node is in a set
+            if edge.nodes[0] not in nodes and edge.nodes[1] not in nodes:
+                mst.append(edge)
+                # add nodes to the node list
+                nodes.append(edge.nodes[0])
+                nodes.append(edge.nodes[1])
+                # create new set
+                addSet = {edge.nodes[0], edge.nodes[1]}
+                sets.append(addSet)
+            # one node is in a set, add the other to that set
+            elif not (edge.nodes[0] in nodes and edge.nodes[1] in nodes):
                 mst.append(edge)
                 if edge.nodes[0] not in nodes:
                     nodes.append(edge.nodes[0])
+                    # add to the other node's set
+                    sets[findSet(sets, edge.nodes[1])].add(edge.nodes[0])
                 if edge.nodes[1] not in nodes:
                     nodes.append(edge.nodes[1])
+                    # add to the other node's set
+                    sets[findSet(sets, edge.nodes[0])].add(edge.nodes[1])
+            # both nodes are in a set, merge the sets if they are different
+            else:
+                set1 = findSet(sets, edge.nodes[0])
+                set2 = findSet(sets, edge.nodes[1])
+                if set1 != set2:
+                    mst.append(edge)
+                    # print(sets[set1])
+                    sets[set1].update(sets[set2])
+                    # print(sets[set1])
+                    sets.pop(set2)
             i += 1
+
+        # print(nodes)
         return mst
 
     def printMST(mst):
@@ -246,64 +316,68 @@ def astar_multiple(maze):
         return node[0]
 
     goals = list(maze.waypoints)
-
+    k = [0 for goal in goals]
     # set up starting state of the search
-    explored = [maze.start]
-    agent = node(maze.start, None, 0, goals,
-                 mstLen(findMST(goals)), explored)
-    frontier = []
+    mst = findMST(goals)
+    state = {}
+    agent = node(maze.start, None, 0, mstLen(mst), k, [], 0, goals)
+    frontier = [(0, agent)]
 
-    while len(agent.goals) != 0:
+    while len(frontier) != 0:
+        agent = frontier.pop(0)[1]
+        # print(agent.k)
+        # if this state has been explored with a lower cost, then skip
+        key = hashPoint(agent.position[0], agent.position[1], agent.k)
+        if key in state and state[key].distance < agent.distance:
+            continue
+        state[key] = agent
         agent.explored.append(agent.position)
-        #print(agent.position, agent.goals)
-        #print(agent.position, agent.goals)
-        #print(agent.position, "added to explored list")
+        a_goals = agent.goals
+        if agent.position in a_goals:
+            # remove the goal from the waypoints list
+            new_k = agent.k.copy()
+            new_k[goals.index(agent.position)] = 1
+            agent.k = new_k
+            new_goals = agent.goals.copy()
+            new_goals.remove(agent.position)
+            # recalculate MST and MST length
+            mst = findMST(new_goals)
+            agent.mstDist = mstLen(mst)
+            # hop to new k plane
+            agent.explored = []
+            agent.goalCount += 1
+            agent.goals = new_goals
+
+        if agent.goalCount == len(goals):
+            break
+
         i = agent.position[0]
         j = agent.position[1]
 
         # update the frontier
         for cell in maze.neighbors(i, j):
             if cell not in agent.explored:
-                h = nearest_neighbor(cell, agent.goals) + \
-                    agent.mstDist + agent.distance
+                newNode = node(cell, agent, agent.distance + 1,
+                               agent.mstDist, agent.k, agent.explored, agent.goalCount, agent.goals.copy())
+                # print(cell, g(newNode))
+                f = nearest_neighbor(cell, agent.goals) + \
+                    newNode.mstDist + newNode.distance
+                # print(cell, f)
+                frontier.append((f, newNode))
 
-                idx = findInFrontier(cell, frontier)
-                if idx != -1:
-                    if frontier[idx][0] > h:
-                        replace = frontier.pop(idx)[1]
-                        frontier.append((h, replace))
-                else:
-                    frontier.append((nearest_neighbor(cell, agent.goals) + agent.mstDist + agent.distance,
-                                     node(cell, agent, agent.distance + 1, agent.goals.copy(), agent.mstDist, agent.explored)))
         # sort the next state tree
         frontier.sort(key=sortNodes)
 
-        agent = frontier.pop(0)[1]
-
-        if agent.position in agent.goals:
-            # print(agent.position)
-            currMst = findMST(agent.goals)
-            # printMST(currMst)
-            # print(mstLen(currMst))
-            agent.goals.remove(agent.position)
-
-            #print("Current mstDist", agent.mstDist)
-            mst = findMST(agent.goals)
-            # printMST(mst)
-            # print(mstLen(mst))
-            #print("New mstDist", mstLen(mst))
-            agent.mstDist = mstLen(mst)
-            agent.explored = [agent.position]
-
     path = []
     reached = []
-    print(agent.goals)
+    # print(agent.goals)
     while agent != None:
         path.insert(0, agent.position)
         agent = agent.parent
 
-    print(maze.validate_path(path))
-    #path.insert(0, maze.start)
+    # print(maze.validate_path(path))
+    # path.insert(0, maze.start)
+    # print(path)
     return path
 
 
