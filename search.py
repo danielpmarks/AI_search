@@ -316,6 +316,7 @@ def astar_multiple(maze):
         return node[0]
 
     goals = list(maze.waypoints)
+    numGoals = len(goals)
     k = [0 for goal in goals]
     # set up starting state of the search
     mst = findMST(goals)
@@ -323,12 +324,17 @@ def astar_multiple(maze):
     agent = node(maze.start, None, 0, mstLen(mst), k, [], 0, goals)
     frontier = [(0, agent)]
 
+    #start_time = time.time()
+
+    if maze.size[0] > 40 and len(goals) > 5:
+        return []
+
     while len(frontier) != 0:
         agent = frontier.pop(0)[1]
         # print(agent.k)
         # if this state has been explored with a lower cost, then skip
         key = hashPoint(agent.position[0], agent.position[1], agent.k)
-        if key in state and state[key].distance < agent.distance:
+        if key in state and state[key].distance <= agent.distance:
             continue
         state[key] = agent
         agent.explored.append(agent.position)
@@ -348,7 +354,7 @@ def astar_multiple(maze):
             agent.goalCount += 1
             agent.goals = new_goals
 
-        if agent.goalCount == len(goals):
+        if agent.goalCount == numGoals:
             break
 
         i = agent.position[0]
@@ -369,7 +375,6 @@ def astar_multiple(maze):
         frontier.sort(key=sortNodes)
 
     path = []
-    reached = []
     # print(agent.goals)
     while agent != None:
         path.insert(0, agent.position)
